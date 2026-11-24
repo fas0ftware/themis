@@ -18,6 +18,11 @@ Its status file feeds the [Olympos](https://github.com/fas0ftware/olympos)
 dashboard, next to Aegis, which checks how the laptop is *configured*; Themis
 watches what *happens* on it.
 
+![Themis: events, listening ports, USB devices and ignore rules (fictional data)](docs/web.png)
+<sub>`themis web`: a read-only page at `http://127.0.0.1:8093/` (fictional events, documentation addresses).</sub>
+
+From the terminal:
+
 ```
 $ themis report --hours 24
 Themis 0.1.0 · last 24 h · low and above
@@ -28,10 +33,6 @@ Themis 0.1.0 · last 24 h · low and above
 2026-11-24 19:21  high     5 failed logins in 10 minutes from ssh 203.0.113.7: someone may be guessing passwords
 ```
 <sub>(`themis demo`: fictional events, documentation addresses.)</sub>
-
-`themis web` shows the same on a read-only page at `http://127.0.0.1:8093/`:
-
-![Themis web page (fictional events)](docs/web.png)
 
 ## What it reports
 
