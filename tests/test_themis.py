@@ -311,3 +311,43 @@ def test_cli_ignore(tmp_path, capsys):
     assert cli.main(["ignore", "remove", "1", "--db", db]) == 0
     assert cli.main(["ignore", "remove", "1", "--db", db]) == 1
     assert cli.main(["known", "ports", "--db", db]) == 0
+
+
+def test_web_page_is_read_only_and_local(tmp_path):
+    import threading
+    import urllib.error
+    import urllib.request
+    from themis.demo import fill
+    from themis.web import serve
+    db = str(tmp_path / "t.db")
+    fill(Store(db))
+    srv = serve(db, 0)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{srv.server_address[1]}"
+
+    def get(path, host=None):
+        req = urllib.request.Request(base + path, headers={"Host": host} if host else {})
+        try:
+            with urllib.request.urlopen(req, timeout=5) as r:
+                return r.status, r.read(), dict(r.headers)
+        except urllib.error.HTTPError as e:
+            return e.code, e.read(), dict(e.headers)
+    try:
+        st, body, headers = get("/")
+        assert st == 200 and b"<title>Themis</title>" in body and "default-src 'none'" in headers["Content-Security-Policy"]
+        assert get("/static/app.js")[0] == 200 and get("/static/themis.svg")[0] == 200
+        events = json.loads(get("/api/events?days=2&min=high")[1])
+        assert {e["kind"] for e in events} == {"usb_keyboard", "brute_force"}
+        o = json.loads(get("/api/overview")[1])
+        assert o["verdict"] == "alert" and o["usb"][0]["label"].startswith("SanDisk")
+        assert get("/api/events?min=loud")[0] == 400 and get("/api/events?days=x")[0] == 400
+        assert get("/api/nothing")[0] == 404
+        assert get("/api/overview", host="evil.example")[0] == 400, "DNS rebinding refused"
+        req = urllib.request.Request(base + "/api/overview", data=b"x", method="POST")
+        try:
+            urllib.request.urlopen(req, timeout=5)
+            raise AssertionError("POST must not work")
+        except urllib.error.HTTPError as e:
+            assert e.code == 501
+    finally:
+        srv.shutdown()

@@ -1,6 +1,6 @@
 # Themis
 
-![Version](https://img.shields.io/badge/version-0.2.0-blue)
+![Version](https://img.shields.io/badge/version-0.3.0-blue)
 ![Python](https://img.shields.io/badge/python-3.11%2B-informational)
 ![Dependencies](https://img.shields.io/badge/dependencies-none-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-green)
@@ -28,6 +28,10 @@ Themis 0.1.0 · last 24 h · low and above
 2026-11-24 19:21  high     5 failed logins in 10 minutes from ssh 203.0.113.7: someone may be guessing passwords
 ```
 <sub>(`themis demo`: fictional events, documentation addresses.)</sub>
+
+`themis web` shows the same on a read-only page at `http://127.0.0.1:8093/`:
+
+![Themis web page (fictional events)](docs/web.png)
 
 ## What it reports
 
@@ -86,6 +90,7 @@ An alert that could not be delivered is retried on the next scan.
 | `themis report [--hours N] [--min SEV] [--json]` | Stored events |
 | `themis known usb` / `services` / `ports` | What counts as already seen |
 | `themis ignore add KIND [TEXT]` / `list` / `remove ID` | Keep matching events as `info`, never pushed (e.g. `themis ignore add auth_failure "the lock screen"`; `*` matches every kind) |
+| `themis web [--port 8093]` | A read-only page on 127.0.0.1: events with a period and severity filter, ports, USB devices, ignore rules |
 | `themis demo [--json]` | Fictional events, or the status file Olympos would read |
 
 `--db PATH` (or `THEMIS_DB`) picks another database.
@@ -119,7 +124,7 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 .venv/bin/python -m pytest -q
 ```
 
-20 tests with a fake `journalctl` and `ss`: every rule on real log lines, hostile user
+21 tests with a fake `journalctl` and `ss`: every rule on real log lines, hostile user
 names, the silent baseline, a keyboard-like USB device, a stick plugged in
 twice, brute force (and failures too spread out to be one), a rotated-away
 cursor, alert retry, file permissions, listening ports (IPv6 link-local
@@ -138,6 +143,7 @@ in 16 seconds (35 before asking `journalctl` for only five fields) and learned
 
 ## Changelog
 
+- **0.3.0** – `themis web`: a read-only page (127.0.0.1 only, Host header checked against DNS rebinding, strict CSP, every value inserted as text). Menu entry through FA Apps.
 - **0.2.0** – `new_listener`: a program listening on the network on a new port (from `ss -tulnp`, no root; the first check learns what is there). `themis ignore` rules keep known noise as `info`. `themis known ports`.
 - **0.1.0** – Failed logins, sudo, SSH, brute force, new USB devices (BadUSB keyboards), new services; silent 30-day baseline; ntfy; status file for Olympos.
 

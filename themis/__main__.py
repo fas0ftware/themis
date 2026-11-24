@@ -159,6 +159,8 @@ def main(argv=None) -> int:
     ir = igs.add_parser("remove", parents=[common(False)])
     ir.add_argument("id", type=int)
     igs.add_parser("list", parents=[common(False)])
+    wb = sub.add_parser("web", help="a read-only page on 127.0.0.1", parents=[common(False)])
+    wb.add_argument("--port", type=int, default=8093)
     dm = sub.add_parser("demo", help="show a report of fictional events", parents=[common(False)])
     dm.add_argument("--json", action="store_true", help="the status file Olympos would read")
     args = p.parse_args(argv)
@@ -166,6 +168,16 @@ def main(argv=None) -> int:
         p.error("THEMIS_ALERT_MIN must be one of " + ", ".join(SEVERITIES))
     if args.cmd == "demo":
         return cmd_demo(args, None)
+    if args.cmd == "web":
+        from .web import serve
+        Store(args.db)   # create it if this is the first run
+        srv = serve(args.db, args.port)
+        print(f"Themis on http://127.0.0.1:{srv.server_address[1]}/", flush=True)
+        try:
+            srv.serve_forever()
+        except KeyboardInterrupt:
+            pass
+        return 0
     store = Store(args.db)
     return {"report": cmd_report, "known": cmd_known, "ignore": cmd_ignore}.get(args.cmd, cmd_scan)(args, store)
 
