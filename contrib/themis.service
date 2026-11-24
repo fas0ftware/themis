@@ -1,0 +1,11 @@
+[Unit]
+Description=Themis: scan the system journal for failed logins, new USB devices and new services
+
+[Service]
+Type=oneshot
+# THEMIS_NTFY_URL / THEMIS_ALERT_MIN can be set here (or in ~/.config/themis/env)
+EnvironmentFile=-%h/.config/themis/env
+ExecStart=/usr/bin/env python3 -m themis scan --save --quiet
+WorkingDirectory=%h/.local/share/themis
+Nice=10
+IOSchedulingClass=idle

@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: pip install -r requirements-dev.txt
+      - run: python -m pyflakes themis tests
+      - run: python -m pytest -q
+      - name: Demo, and a real scan of the CI machine's journal (read-only)
+        run: |
+          python -m themis demo --json | python -c "import json,sys; d=json.load(sys.stdin); assert d['verdict'] == 'alert'"
+          sudo usermod -aG adm "$USER" || true
+          python -m themis --db /tmp/themis.db --no-color || test $? -eq 2
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install bandit
+      - name: Static analysis (bandit)
+        run: bandit -q -r themis
