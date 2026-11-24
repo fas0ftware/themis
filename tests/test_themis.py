@@ -242,3 +242,72 @@ def test_cli(tmp_path, monkeypatch, capsys):
     with pytest.raises(SystemExit):
         cli.main(["--version"])
 
+
+
+# --- listening ports and ignore rules (0.2) -------------------------------------------------
+
+SS = """\
+udp UNCONN 0 0 127.0.0.53%lo:53 0.0.0.0:*
+udp UNCONN 0 0 224.0.0.251:5353 0.0.0.0:* users:(("brave",pid=1,fd=2))
+udp UNCONN 0 0 0.0.0.0:5353 0.0.0.0:*
+udp UNCONN 0 0 0.0.0.0:54345 0.0.0.0:* users:(("python3",pid=2,fd=9))
+udp UNCONN 0 0 192.168.1.6:3702 0.0.0.0:* users:(("python3",pid=2,fd=10))
+udp UNCONN 0 0 [fe80::ab65:e341:a41:6456]%wlo1:546 [::]:*
+tcp LISTEN 0 128 127.0.0.1:8470 0.0.0.0:* users:(("python3",pid=3,fd=4))
+tcp LISTEN 0 128 0.0.0.0:22 0.0.0.0:*
+tcp LISTEN 0 128 [::]:22 [::]:*
+tcp ESTAB 0 0 192.168.1.6:40000 203.0.113.9:443
+"""
+
+
+def test_ports_parse_skips_loopback_multicast_and_ephemeral():
+    from themis import ports
+    got = {(x.proto, x.port, x.wildcard, x.process) for x in ports.parse(SS, (32768, 60999))}
+    assert got == {("udp", 5353, True, ""), ("udp", 3702, False, "python3"), ("udp", 546, False, ""),
+                   ("tcp", 22, True, "")}
+    [ssh] = [x for x in ports.parse(SS) if x.port == 22]
+    assert ssh.describe() == "tcp 22 on every address (a system process)"
+    hostile = 'tcp LISTEN 0 1 0.0.0.0:9999 0.0.0.0:* users:(("\x1b[31mevil",pid=1,fd=1))'
+    assert "\x1b" not in ports.parse(hostile)[0].process
+
+
+def test_new_listener_after_the_first_check(tmp_path):
+    store = Store(tmp_path / "t.db")
+    out = {"ss": SS}
+    j = FakeJournal([started("a.service")], [], [])
+    r = engine.scan(store, j, ss=lambda: out["ss"])
+    assert r.learned_ports == 4 and not r.events, "the first check learns silently"
+    out["ss"] = SS + 'tcp LISTEN 0 128 0.0.0.0:8000 0.0.0.0:* users:(("python3",pid=9,fd=3))\n'
+    [f] = engine.scan(store, j, ss=lambda: out["ss"]).events
+    assert (f.kind, f.severity) == ("new_listener", "medium")
+    assert f.message.endswith("tcp 8000 on every address (python3)")
+    assert engine.scan(store, j, ss=lambda: out["ss"]).events == [], "known now"
+    assert engine.scan(store, j, ss=lambda: None).events == [], "no ss: nothing to say"
+
+
+def test_ignore_rules_keep_events_as_info(tmp_path):
+    store = Store(tmp_path / "t.db")
+    rid = store.add_ignore("ssh_failure", "203.0.113.7")
+    store.add_ignore("usb_new")
+    j = FakeJournal([started("a.service")], [
+        line("Invalid user x from 203.0.113.7 port 1", "sshd", ts=T0 + 1),
+        line("Invalid user y from 198.51.100.2 port 1", "sshd", ts=T0 + 2),
+        kernel("usb 1-5: New USB device found, idVendor=0781, idProduct=5567, bcdDevice= 1.00", T0 + 3)])
+    engine.scan(store, j)
+    r = engine.scan(store, j)
+    sev = {f.message.split(" from ")[-1] if f.kind == "ssh_failure" else f.kind: f.severity for f in r.events}
+    assert sev == {"203.0.113.7": "info", "198.51.100.2": "medium", "usb_new": "info"} and r.ignored == 2
+    assert [e["kind"] for e in store.unalerted("info")] == ["ssh_failure"], "only the unmatched one is pushed"
+    assert store.remove_ignore(rid) and not store.remove_ignore(rid)
+
+
+def test_cli_ignore(tmp_path, capsys):
+    db = str(tmp_path / "t.db")
+    assert cli.main(["ignore", "add", "new_listener", "tcp 8000", "--db", db]) == 0
+    assert "rule 1" in capsys.readouterr().out
+    assert cli.main(["ignore", "add", "bogus", "--db", db]) == 2
+    assert cli.main(["ignore", "list", "--db", db]) == 0
+    assert "new_listener" in capsys.readouterr().out
+    assert cli.main(["ignore", "remove", "1", "--db", db]) == 0
+    assert cli.main(["ignore", "remove", "1", "--db", db]) == 1
+    assert cli.main(["known", "ports", "--db", db]) == 0

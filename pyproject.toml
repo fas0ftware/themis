@@ -1,6 +1,6 @@
 [project]
 name = "themis"
-version = "0.1.0"
+version = "0.2.0"
 description = "Watches a Linux laptop's system journal for failed logins, brute force, new USB devices and new services"
 readme = "README.md"
 license = "MIT"

@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 
-from . import journal
+from . import journal, ports
 from .journal import Entry
 from .rules import (HID_KEYBOARD, ROOT_HUB_VENDOR, USB_INFO, USB_NEW, Finding, auth_findings, clean,
                     unit_started)
@@ -26,6 +27,21 @@ class ScanResult:
     events: list[Finding] = field(default_factory=list)
     learned_usb: int = 0
     learned_units: int = 0
+    learned_ports: int = 0
+    ignored: int = 0
+
+
+def store_findings(store: Store, found: list[Finding], baseline: bool, result: ScanResult) -> None:
+    """Store in time order. History learned on the first run is never pushed to the phone;
+    an event that matches an ignore rule is kept as "info" and never pushed either."""
+    rules = store.ignores()
+    for f in sorted(found, key=lambda f: f.ts):
+        quiet = baseline
+        if rules and ignored(f, rules):
+            f.severity, quiet = "info", True
+            result.ignored += 1
+        store.add(f, alerted=quiet)
+        result.events.append(f)
 
 
 def _usb_devices(entries: list[Entry]) -> list[dict]:
@@ -61,8 +77,38 @@ def _usb_label(d: dict) -> str:
     return f"{name} ({d['vid']}:{d['pid']})"
 
 
+PORTS_BASELINE_KEY = "ports_baseline_done"
+
+
+def check_ports(store: Store, ss: ports.Runner, now: float) -> tuple[list[Finding], int]:
+    """New programs listening on the network. The first check learns what is there."""
+    text = ss()
+    if text is None:
+        return [], 0
+    first = store.get(PORTS_BASELINE_KEY) != "1"
+    found, learned = [], 0
+    for lst in ports.parse(text, ports.ephemeral_range()):
+        if store.is_known("port", lst.key):
+            continue
+        store.remember("port", lst.key, lst.describe(), now)
+        learned += 1
+        if not first:
+            found.append(Finding(now, "new_listener", "medium",
+                                 f"A program listens on the network for the first time: {lst.describe()}",
+                                 f"port {lst.key}", {"proto": lst.proto, "port": lst.port, "process": lst.process,
+                                                     "all_addresses": lst.wildcard}))
+    store.put(PORTS_BASELINE_KEY, "1")
+    return found, learned
+
+
+def ignored(f: Finding, rules: list[dict]) -> bool:
+    return any(r["kind"] in (f.kind, "*") and (not r["match"] or r["match"] in f.source or r["match"] in f.message)
+               for r in rules)
+
+
 def scan(store: Store, runner: journal.Runner = journal.run_journalctl,
-         since: str = journal.BASELINE_SINCE) -> ScanResult:
+         since: str = journal.BASELINE_SINCE, ss: ports.Runner | None = None,
+         clock=time.time) -> ScanResult:
     cursor = store.get(CURSOR_KEY)
     baseline = store.get(BASELINE_KEY) != "1"
     last_ts = store.get(LAST_TS_KEY)
@@ -72,10 +118,11 @@ def scan(store: Store, runner: journal.Runner = journal.run_journalctl,
     result = ScanResult(baseline=baseline, entries=len(entries))
     if baseline:
         store.put(BASELINE_KEY, "1")
+    found, result.learned_ports = check_ports(store, ss or ports.run_ss, clock())
     if not entries:
+        store_findings(store, found, baseline, result)
         return result
 
-    found: list[Finding] = []
     for e in entries:
         found.extend(auth_findings(e))
         unit = unit_started(e)
@@ -106,10 +153,7 @@ def scan(store: Store, runner: journal.Runner = journal.run_journalctl,
             found.append(Finding(d["ts"], "usb_new", "low", f"New USB device: {label}", f"usb {key}",
                                  {"device": label, "port": d["port"]}))
 
-    found.sort(key=lambda f: f.ts)
-    for f in found:
-        store.add(f, alerted=baseline)   # history learned on the first run is never pushed to the phone
-    result.events.extend(found)
+    store_findings(store, found, baseline, result)
 
     # Brute force: many failures from one source in a short window, judged on everything stored.
     if not baseline:
@@ -124,8 +168,7 @@ def scan(store: Store, runner: journal.Runner = journal.run_journalctl,
                 bf = Finding(ts, "brute_force", "high",
                              f"{n} failed logins in {BRUTE_WINDOW // 60} minutes from {source}: "
                              "someone may be guessing passwords", source, {"failures": n})
-                store.add(bf)
-                result.events.append(bf)
+                store_findings(store, [bf], False, result)
 
     store.put(CURSOR_KEY, entries[-1].cursor)
     store.put(LAST_TS_KEY, repr(entries[-1].ts))

@@ -32,6 +32,12 @@ CREATE TABLE IF NOT EXISTS known (
     PRIMARY KEY (kind, key)
 );
 CREATE TABLE IF NOT EXISTS state (k TEXT PRIMARY KEY, v TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS ignore (
+    id    INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind  TEXT NOT NULL,
+    match TEXT NOT NULL DEFAULT '',
+    added REAL NOT NULL
+);
 """
 
 
@@ -87,6 +93,18 @@ class Store:
         rows = self._run(lambda c: c.execute("SELECT key, label, first_seen FROM known WHERE kind = ? ORDER BY "
                                              "first_seen, key", (kind,)).fetchall())
         return [{"key": r[0], "label": r[1], "first_seen": r[2]} for r in rows]
+
+    # --- ignore rules: matching events are kept as "info" and never pushed
+    def add_ignore(self, kind: str, match: str = "") -> int:
+        return self._run(lambda c: c.execute("INSERT INTO ignore (kind, match, added) VALUES (?, ?, ?)",
+                                             (kind, match, time.time())).lastrowid)
+
+    def ignores(self) -> list[dict]:
+        rows = self._run(lambda c: c.execute("SELECT id, kind, match, added FROM ignore ORDER BY id").fetchall())
+        return [{"id": r[0], "kind": r[1], "match": r[2], "added": r[3]} for r in rows]
+
+    def remove_ignore(self, rule_id: int) -> bool:
+        return self._run(lambda c: c.execute("DELETE FROM ignore WHERE id = ?", (rule_id,)).rowcount) > 0
 
     # --- events
     def add(self, f: Finding, alerted: bool = False) -> int:

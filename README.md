@@ -1,6 +1,6 @@
 # Themis
 
-![Version](https://img.shields.io/badge/version-0.1.0-blue)
+![Version](https://img.shields.io/badge/version-0.2.0-blue)
 ![Python](https://img.shields.io/badge/python-3.11%2B-informational)
 ![Dependencies](https://img.shields.io/badge/dependencies-none-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-green)
@@ -8,8 +8,9 @@
 **Themis watches your Linux laptop's system journal and tells you what you
 should know about**: someone guessing your password at the lock screen, sudo
 used by an account that is not allowed to, SSH logins and brute force, a new
-USB stick, a "keyboard" nobody plugged in on purpose, and a service that has
-never run on this machine before.
+USB stick, a "keyboard" nobody plugged in on purpose, a service that has
+never run on this machine before, and a program that starts listening on the
+network.
 
 It only **reads** the journal (`journalctl`, no root), keeps its own small
 SQLite database, and can push alerts to your phone with [ntfy](https://ntfy.sh).
@@ -41,6 +42,7 @@ Themis 0.1.0 · last 24 h · low and above
 | `usb_new` | low | A USB device this laptop has never seen (vendor:product:serial) |
 | `usb_keyboard` | high | A *new* USB device that registers as a keyboard: a "charging cable" or stick that types commands (BadUSB) |
 | `new_service` | medium | A system service, timer, socket or path unit started for the first time: software that installs itself to start on its own |
+| `new_listener` | medium | A program listens on the network on a port it never used before (from `ss`; loopback, multicast and the ephemeral UDP ports browsers open are left out). The view from inside, next to Cerberus' view from the network |
 
 The first run reads the last 30 days and **learns** what is normal: the USB
 devices and services already there are remembered without an alert, and old
@@ -82,7 +84,8 @@ An alert that could not be delivered is retried on the next scan.
 |---|---|
 | `themis` / `themis scan` | Read new journal entries; `--save [PATH]` writes the status file, `--ntfy URL` pushes, `-q` prints nothing |
 | `themis report [--hours N] [--min SEV] [--json]` | Stored events |
-| `themis known usb` / `themis known services` | What counts as already seen |
+| `themis known usb` / `services` / `ports` | What counts as already seen |
+| `themis ignore add KIND [TEXT]` / `list` / `remove ID` | Keep matching events as `info`, never pushed (e.g. `themis ignore add auth_failure "the lock screen"`; `*` matches every kind) |
 | `themis demo [--json]` | Fictional events, or the status file Olympos would read |
 
 `--db PATH` (or `THEMIS_DB`) picks another database.
@@ -116,10 +119,11 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 .venv/bin/python -m pytest -q
 ```
 
-16 tests with a fake `journalctl`: every rule on real log lines, hostile user
+20 tests with a fake `journalctl` and `ss`: every rule on real log lines, hostile user
 names, the silent baseline, a keyboard-like USB device, a stick plugged in
 twice, brute force (and failures too spread out to be one), a rotated-away
-cursor, alert retry, file permissions, the CLI. CI also runs a real scan of the
+cursor, alert retry, file permissions, listening ports (IPv6 link-local
+written the way `ss` writes it, hostile process names), ignore rules, the CLI. CI also runs a real scan of the
 runner's journal, and bandit.
 
 On the author's laptop the first run read 376 279 journal entries from 30 days
@@ -128,9 +132,14 @@ in 16 seconds (35 before asking `journalctl` for only five fields) and learned
 
 ## Roadmap
 
-- New listening ports (from `ss`), to complement Cerberus' view from the network.
-- A trusted-USB list with names, and an `ignore` command for known noise.
+- ~~New listening ports~~ and ~~an `ignore` command~~: done in 0.2.
+- A trusted-USB list with names.
 - Login from a new network (SSH from an address range never seen before).
+
+## Changelog
+
+- **0.2.0** – `new_listener`: a program listening on the network on a new port (from `ss -tulnp`, no root; the first check learns what is there). `themis ignore` rules keep known noise as `info`. `themis known ports`.
+- **0.1.0** – Failed logins, sudo, SSH, brute force, new USB devices (BadUSB keyboards), new services; silent 30-day baseline; ntfy; status file for Olympos.
 
 ## License
 

@@ -21,6 +21,8 @@ from .journal import JournalError
 from .rules import SEVERITIES
 from .store import Store, default_path
 
+KINDS = {"auth_failure", "sudo_failed", "sudo_not_allowed", "ssh_failure", "ssh_login", "brute_force",
+         "usb_new", "usb_keyboard", "new_service", "new_listener"}
 COLORS = {"info": "2", "low": "32", "medium": "33", "high": "31", "critical": "1;31"}
 
 
@@ -49,9 +51,11 @@ def cmd_scan(args, store: Store) -> int:
         return 2
     if r.baseline:
         print(f"First run: read {r.entries} journal entries from the last 30 days and learned "
-              f"{r.learned_usb} USB device(s) and {r.learned_units} service(s); from now on, new ones are reported.")
+              f"{r.learned_usb} USB device(s), {r.learned_units} service(s) and {r.learned_ports} listening port(s); "
+              "from now on, new ones are reported.")
     elif not args.quiet:
-        print(f"Read {r.entries} new journal entries, {len(r.events)} event(s).")
+        print(f"Read {r.entries} new journal entries, {len(r.events)} event(s)"
+              + (f", {r.ignored} ignored by your rules" if r.ignored else "") + ".")
     if not args.quiet:
         print_events([{"ts": f.ts, "severity": f.severity, "message": f.message} for f in r.events
                       if f.severity != "info"], args.color)
@@ -77,8 +81,30 @@ def cmd_report(args, store: Store) -> int:
     return 0
 
 
+def cmd_ignore(args, store: Store) -> int:
+    if args.action == "add":
+        if args.kind != "*" and args.kind not in KINDS:
+            print(f"themis: unknown kind {args.kind!r}; one of: {', '.join(sorted(KINDS))} or *", file=sys.stderr)
+            return 2
+        rid = store.add_ignore(args.kind, args.match)
+        print(f"rule {rid}: {args.kind} events" + (f" mentioning {args.match!r}" if args.match else "")
+              + " are kept as info and never pushed")
+    elif args.action == "remove":
+        if not store.remove_ignore(args.id):
+            print(f"themis: no rule {args.id}", file=sys.stderr)
+            return 1
+        print(f"rule {args.id} removed")
+    else:
+        rules = store.ignores()
+        for r in rules:
+            print(f"{r['id']:>3}  {r['kind']:<16} {r['match'] or '(any)'}")
+        if not rules:
+            print("No ignore rules.")
+    return 0
+
+
 def cmd_known(args, store: Store) -> int:
-    kind = {"usb": "usb", "services": "unit"}[args.what]
+    kind = {"usb": "usb", "services": "unit", "ports": "port"}[args.what]
     rows = store.known(kind)
     for r in rows:
         print(f"{when(r['first_seen'])}  {r['label'] or r['key']}")
@@ -124,7 +150,15 @@ def main(argv=None) -> int:
     rp.add_argument("--min", choices=SEVERITIES, default="low")
     rp.add_argument("--json", action="store_true")
     kn = sub.add_parser("known", help="list what has been seen before", parents=[common(False)])
-    kn.add_argument("what", choices=("usb", "services"))
+    kn.add_argument("what", choices=("usb", "services", "ports"))
+    ig = sub.add_parser("ignore", help="keep matching events as info, never pushed", parents=[common(False)])
+    igs = ig.add_subparsers(dest="action")
+    ia = igs.add_parser("add", parents=[common(False)])
+    ia.add_argument("kind", help="event kind (e.g. auth_failure, new_listener) or *")
+    ia.add_argument("match", nargs="?", default="", help="only events whose source or text contains this")
+    ir = igs.add_parser("remove", parents=[common(False)])
+    ir.add_argument("id", type=int)
+    igs.add_parser("list", parents=[common(False)])
     dm = sub.add_parser("demo", help="show a report of fictional events", parents=[common(False)])
     dm.add_argument("--json", action="store_true", help="the status file Olympos would read")
     args = p.parse_args(argv)
@@ -133,7 +167,7 @@ def main(argv=None) -> int:
     if args.cmd == "demo":
         return cmd_demo(args, None)
     store = Store(args.db)
-    return {"report": cmd_report, "known": cmd_known}.get(args.cmd, cmd_scan)(args, store)
+    return {"report": cmd_report, "known": cmd_known, "ignore": cmd_ignore}.get(args.cmd, cmd_scan)(args, store)
 
 
 if __name__ == "__main__":
