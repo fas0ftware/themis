@@ -251,12 +251,12 @@ udp UNCONN 0 0 127.0.0.53%lo:53 0.0.0.0:*
 udp UNCONN 0 0 224.0.0.251:5353 0.0.0.0:* users:(("brave",pid=1,fd=2))
 udp UNCONN 0 0 0.0.0.0:5353 0.0.0.0:*
 udp UNCONN 0 0 0.0.0.0:54345 0.0.0.0:* users:(("python3",pid=2,fd=9))
-udp UNCONN 0 0 192.168.1.6:3702 0.0.0.0:* users:(("python3",pid=2,fd=10))
+udp UNCONN 0 0 192.168.1.10:3702 0.0.0.0:* users:(("python3",pid=2,fd=10))
 udp UNCONN 0 0 [fe80::ab65:e341:a41:6456]%wlo1:546 [::]:*
 tcp LISTEN 0 128 127.0.0.1:8470 0.0.0.0:* users:(("python3",pid=3,fd=4))
 tcp LISTEN 0 128 0.0.0.0:22 0.0.0.0:*
 tcp LISTEN 0 128 [::]:22 [::]:*
-tcp ESTAB 0 0 192.168.1.6:40000 203.0.113.9:443
+tcp ESTAB 0 0 192.168.1.10:40000 203.0.113.9:443
 """
 
 
